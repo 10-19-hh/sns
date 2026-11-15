@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>회원가입 · Moment</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-bare="1">
+  <main class="page narrow auth-card">
+    <div class="logo">Moment<span>.</span></div>
+    <p class="sub">가입하고 사진과 이야기를 공유해보세요</p>
+    <form id="form" novalidate>
+      <div class="field">
+        <label for="email">이메일</label>
+        <input class="input" id="email" type="email" autocomplete="email" placeholder="name@example.com">
+        <div class="error" id="e-email" role="alert"></div>
+      </div>
+      <div class="field">
+        <label for="username">사용자명</label>
+        <input class="input" id="username" autocomplete="username" placeholder="영문, 숫자, _ . 3~20자">
+        <div class="error" id="e-username" role="alert"></div>
+      </div>
+      <div class="field">
+        <label for="pw">비밀번호</label>
+        <input class="input" id="pw" type="password" autocomplete="new-password" placeholder="8자 이상">
+        <div class="error" id="e-pw" role="alert"></div>
+      </div>
+      <div class="error" id="e-form" role="alert" style="text-align:center;margin-bottom:10px"></div>
+      <button class="btn btn-primary btn-block" type="submit" id="submit" style="margin-top:6px">가입하기</button>
+    </form>
+    <div class="auth-foot">이미 계정이 있으신가요? <a class="link-btn" href="login.html">로그인</a></div>
+  </main>
+  <script type="module">
+    import { signUp, getSession, supabase } from './js/supabase.js';
+    const $ = (s) => document.querySelector(s);
+
+    (async () => { if (await getSession()) location.href = 'index.html'; })();
+
+    async function usernameTaken(username) {
+      const { data } = await supabase.from('profiles').select('id').eq('username', username).maybeSingle();
+      return !!data;
+    }
+
+    $('#form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      let ok = true;
+      const set = (id, inp, msg) => { $(id).textContent = msg; $(inp).classList.toggle('invalid', !!msg); if (msg) ok = false; };
+      const email = $('#email').value.trim();
+      const username = $('#username').value.trim();
+      const pw = $('#pw').value;
+      set('#e-email', '#email', /^\S+@\S+\.\S+$/.test(email) ? '' : '올바른 이메일을 입력해주세요.');
+      set('#e-username', '#username', /^[A-Za-z0-9_.]{3,20}$/.test(username) ? '' : '사용자명은 영문, 숫자, _, . 조합 3~20자예요.');
+      set('#e-pw', '#pw', pw.length >= 8 ? '' : '비밀번호는 8자 이상이어야 해요.');
+      $('#e-form').textContent = '';
+      if (!ok) return;
+
+      const btn = $('#submit');
+      btn.disabled = true; btn.textContent = '확인 중…';
+      try {
+        if (await usernameTaken(username)) {
+          $('#e-username').textContent = '이미 사용 중인 사용자명이에요.';
+          btn.disabled = false; btn.textContent = '가입하기';
+          return;
+        }
+        btn.textContent = '가입 중…';
+        const { session } = await signUp({ email, password: pw, username });
+        if (session) {
+          location.href = 'index.html';
+        } else {
+          // 이메일 확인이 활성화된 경우 세션이 즉시 생기지 않음
+          $('#e-form').style.color = 'var(--text-sub)';
+          $('#e-form').textContent = '가입이 완료됐어요. 이메일을 확인한 뒤 로그인해주세요.';
+          btn.textContent = '가입하기'; btn.disabled = true;
+        }
+      } catch (err) {
+        $('#e-form').textContent = err.message?.includes('already registered')
+          ? '이미 가입된 이메일이에요.'
+          : '가입 중 오류가 발생했어요. 다시 시도해주세요.';
+        btn.disabled = false; btn.textContent = '가입하기';
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Moment</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="home">
+  <main class="page" id="feed" aria-label="피드"></main>
+  <div class="loader" id="loader" hidden><div class="spinner"></div>불러오는 중…</div>
+  <div class="empty" id="empty" hidden><h3>아직 게시글이 없어요</h3><a class="link-btn" href="new.html">첫 게시글 올리기</a></div>
+  <script src="js/common.js"></script>
+  <script type="module">
+    import { getSession, fetchFeed, likePost, unlikePost, deletePost, postImageUrl, timeAgo, initHeader } from './js/supabase.js';
+    const { $, cardHTML, bindCard, toast } = UI;
+    const feed = $('#feed'), loader = $('#loader'), empty = $('#empty');
+    const PAGE = 10; // prd.md 기준 페이지당 10개
+    let from = 0, done = false, busy = false, myId = null;
+
+    function toViewModel(row) {
+      return {
+        id: row.id,
+        authorUsername: row.author_username,
+        authorAvatar: row.author_avatar_url,
+        imageUrl: postImageUrl(row.image_path),
+        caption: row.caption,
+        edited: row.edited,
+        timeLabel: timeAgo(row.created_at),
+        likeCount: row.like_count,
+        liked: row.liked_by_me,
+        commentCount: row.comment_count,
+        isMine: row.author_id === myId,
+      };
+    }
+
+    async function load() {
+      if (busy || done) return;
+      busy = true; loader.hidden = false; loader.innerHTML = '<div class="spinner"></div>불러오는 중…';
+      try {
+        const rows = await fetchFeed({ from, to: from + PAGE - 1 });
+        if (from === 0 && rows.length === 0) { empty.hidden = false; loader.hidden = true; done = true; return; }
+        rows.forEach((row) => {
+          const p = toViewModel(row);
+          feed.insertAdjacentHTML('beforeend', cardHTML(p));
+          const card = feed.lastElementChild;
+          bindCard(card, p, {
+            onLike: () => likePost(p.id),
+            onUnlike: () => unlikePost(p.id),
+            onDeleteConfirmed: () => deletePost(p.id),
+            onDeleted: () => card.remove(),
+          });
+        });
+        from += rows.length;
+        if (rows.length < PAGE) { done = true; loader.innerHTML = feed.children.length ? '모든 게시글을 확인했어요 ✓' : ''; }
+        else loader.hidden = true;
+      } catch (e) {
+        console.error(e);
+        loader.innerHTML = '게시글을 불러오지 못했어요.';
+        toast('피드를 불러오는 중 오류가 발생했어요.');
+        done = true;
+      } finally {
+        busy = false;
+      }
+    }
+
+    (async () => {
+      const [session] = await Promise.all([getSession(), initHeader()]);
+      myId = session?.user?.id ?? null;
+      new IntersectionObserver((e) => e[0].isIntersecting && load(), { rootMargin: '300px' }).observe(loader);
+      load();
+    })();
+  </script>
+</body>
+</html>

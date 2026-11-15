@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>프로필 편집 · Moment</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="settings">
+  <main class="page narrow compose">
+    <h1>프로필 편집</h1>
+    <div class="avatar-edit">
+      <img class="avatar lg" id="av" alt="프로필 사진">
+      <div>
+        <div style="font-weight:600" id="un"></div>
+        <label class="link-btn" style="cursor:pointer;font-size:14px">
+          사진 변경<input type="file" id="file" accept="image/jpeg,image/png,image/webp" class="sr-only">
+        </label>
+      </div>
+    </div>
+    <div class="field">
+      <label for="name">이름</label>
+      <input class="input" id="name" maxlength="30">
+    </div>
+    <div class="field">
+      <label for="bio">소개</label>
+      <textarea class="textarea" id="bio" maxlength="150" style="min-height:90px"></textarea>
+      <div class="hint counter"><span id="cnt">0</span> / 150</div>
+    </div>
+    <div class="error" id="e-form" role="alert"></div>
+    <div class="actions-row">
+      <a class="btn btn-secondary" href="profile.html">취소</a>
+      <button class="btn btn-primary" id="save">저장</button>
+    </div>
+    <div class="auth-foot" style="margin-top:32px"><button class="link-btn" id="logout" style="color:var(--red)">로그아웃</button></div>
+  </main>
+  <script src="js/common.js"></script>
+  <script type="module">
+    import { requireSession, initHeader, getMyProfile, updateMyProfile, uploadAvatar, signOut } from './js/supabase.js';
+    const { $, toast } = UI;
+    let pendingFile = null, userId = null;
+
+    (async () => {
+      const session = await requireSession();
+      if (!session) return;
+      userId = session.user.id;
+      initHeader();
+      const u = await getMyProfile();
+      $('#av').src = u.avatar_url || '';
+      $('#un').textContent = '@' + u.username;
+      $('#name').value = u.display_name || '';
+      $('#bio').value = u.bio || '';
+      const cnt = () => ($('#cnt').textContent = $('#bio').value.length);
+      $('#bio').addEventListener('input', cnt); cnt();
+    })();
+
+    $('#file').addEventListener('change', (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      if (!/^image\/(jpeg|png|webp)$/.test(f.type)) { $('#e-form').textContent = 'jpg, png, webp 형식만 올릴 수 있어요.'; return; }
+      if (f.size > 10 * 1024 * 1024) { $('#e-form').textContent = '10MB 이하의 이미지만 올릴 수 있어요.'; return; }
+      $('#e-form').textContent = '';
+      pendingFile = f;
+      $('#av').src = URL.createObjectURL(f);
+    });
+
+    $('#save').onclick = async () => {
+      const btn = $('#save'); btn.disabled = true; btn.textContent = '저장 중…';
+      $('#e-form').textContent = '';
+      try {
+        let avatar_url;
+        if (pendingFile) avatar_url = await uploadAvatar(userId, pendingFile);
+        await updateMyProfile({ display_name: $('#name').value.trim() || null, bio: $('#bio').value.trim() || null, avatar_url });
+        toast('프로필이 저장되었어요');
+        location.href = 'profile.html';
+      } catch (err) {
+        $('#e-form').textContent = '저장에 실패했어요. 다시 시도해주세요.';
+        btn.disabled = false; btn.textContent = '저장';
+      }
+    };
+
+    $('#logout').onclick = async () => { await signOut(); location.href = 'login.html'; };
+  </script>
+</body>
+</html>

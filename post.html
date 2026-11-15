@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>게시글 · Moment</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="post">
+  <main class="page detail" id="detail"><div class="loader"><div class="spinner"></div>불러오는 중…</div></main>
+  <script src="js/common.js"></script>
+  <script type="module">
+    import {
+      getSession, initHeader, fetchPost, fetchComments, addComment, updateComment, deleteComment,
+      likePost, unlikePost, deletePost, postImageUrl, timeAgo, getMyProfile,
+    } from './js/supabase.js';
+    const { $, $$, esc, qs, cardHTML, bindCard, toast, confirmModal } = UI;
+    const id = qs('id');
+    let myId = null, post = null, comments = [];
+
+    function toViewModel(row) {
+      return {
+        id: row.id,
+        authorUsername: row.author_username,
+        authorAvatar: row.author_avatar_url,
+        imageUrl: postImageUrl(row.image_path),
+        caption: row.caption,
+        edited: row.edited,
+        timeLabel: timeAgo(row.created_at),
+        likeCount: row.like_count,
+        liked: row.liked_by_me,
+        commentCount: row.comment_count,
+        isMine: row.author_id === myId,
+      };
+    }
+
+    function row(c) {
+      const u = c.profiles || {};
+      const mine = c.author_id === myId;
+      const canDel = mine || post.isMine;
+      return `<div class="cmt" data-cid="${c.id}">
+        <a href="profile.html?u=${encodeURIComponent(u.username || '')}"><img class="avatar xs" src="${esc(u.avatar_url || '')}" alt=""></a>
+        <div class="cmt-main">
+          <div data-body><b>${esc(u.username)}</b>${esc(c.content)}${c.updated_at !== c.created_at ? ' <span class="edited" style="color:var(--text-sub);font-size:12px">(수정됨)</span>' : ''}</div>
+          <div class="cmt-meta"><span>${timeAgo(c.created_at)}</span>
+            ${mine ? '<button data-edit>수정</button>' : ''}${canDel ? '<button data-del>삭제</button>' : ''}</div>
+        </div></div>`;
+    }
+
+    function renderComments() {
+      $('#count').textContent = comments.length ? comments.length : '';
+      $('#list').innerHTML = comments.length
+        ? comments.map(row).join('')
+        : '<div class="cmt-empty">아직 댓글이 없어요.<br>첫 댓글을 남겨보세요.</div>';
+    }
+
+    async function init() {
+      const session = await getSession();
+      myId = session?.user?.id ?? null;
+      initHeader();
+
+      let data;
+      try {
+        data = await fetchPost(id);
+      } catch (e) {
+        $('#detail').innerHTML = '<div class="empty"><h3>게시글을 찾을 수 없어요</h3></div>';
+        return;
+      }
+      post = toViewModel(data);
+      document.title = `${post.authorUsername}님의 게시글 · Moment`;
+
+      const root = $('#detail');
+      root.innerHTML = `<div id="postwrap">${cardHTML(post, { detail: true })}</div>
+        <section class="detail-comments" aria-label="댓글">
+          <h2>댓글 <span id="count"></span></h2>
+          <div id="list"><div class="loader"><div class="spinner"></div></div></div>
+        </section>
+        ${myId
+          ? `<form class="cmt-form" id="form">
+               <img class="avatar xs" id="my-avatar" src="" alt="">
+               <input class="input" id="text" maxlength="500" placeholder="댓글 달기…" aria-label="댓글 입력">
+               <button class="link-btn" id="send" disabled type="submit">게시</button>
+             </form>`
+          : `<div class="login-hint">댓글을 남기려면 <a class="link-btn" href="login.html">로그인</a>해주세요.</div>`}`;
+
+      bindCard($('.card', root), post, {
+        onLike: () => likePost(post.id),
+        onUnlike: () => unlikePost(post.id),
+        onDeleteConfirmed: () => deletePost(post.id),
+        onDeleted: () => { toast('게시글이 삭제되었어요'); setTimeout(() => (location.href = 'index.html'), 500); },
+      });
+
+      if (session) {
+        const avatarImg = $('#my-avatar');
+        if (avatarImg) {
+          try { avatarImg.src = (await getMyProfile())?.avatar_url || ''; } catch (e) { /* 아바타 없음 */ }
+        }
+      }
+
+      try {
+        comments = await fetchComments(id);
+      } catch (e) {
+        comments = [];
+      }
+      renderComments();
+
+      $('#list').addEventListener('click', async (e) => {
+        const el = e.target.closest('.cmt'); if (!el) return;
+        const c = comments.find((x) => x.id === Number(el.dataset.cid));
+        if (e.target.matches('[data-del]')) {
+          confirmModal({ title: '댓글을 삭제할까요?', message: '삭제한 댓글은 되돌릴 수 없어요.', okText: '삭제', danger: true },
+            async () => {
+              try {
+                await deleteComment(c.id);
+                comments = comments.filter((x) => x !== c);
+                post.commentCount--;
+                renderComments();
+                toast('댓글이 삭제되었어요');
+              } catch (err) { toast('삭제에 실패했어요.'); }
+            });
+        }
+        if (e.target.matches('[data-edit]')) {
+          const body = $('[data-body]', el);
+          body.innerHTML = `<form class="cmt-edit"><input class="input" maxlength="500" value="${esc(c.content)}" aria-label="댓글 수정">
+            <button class="btn btn-primary btn-sm">저장</button><button type="button" class="btn btn-secondary btn-sm" data-cancel>취소</button></form>`;
+          const f = $('form', body), inp = $('input', f); inp.focus();
+          f.onsubmit = async (ev) => {
+            ev.preventDefault();
+            const val = inp.value.trim();
+            if (!val) return;
+            try {
+              const updated = await updateComment(c.id, val);
+              c.content = updated.content; c.updated_at = updated.updated_at;
+            } catch (err) { toast('수정에 실패했어요.'); }
+            renderComments();
+          };
+          $('[data-cancel]', f).onclick = renderComments;
+        }
+      });
+
+      const text = $('#text'), send = $('#send');
+      if (text) {
+        text.addEventListener('input', () => (send.disabled = !text.value.trim()));
+        $('#form').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const val = text.value.trim();
+          if (!val) return;
+          send.disabled = true;
+          try {
+            const c = await addComment(id, val);
+            comments.push(c);
+            post.commentCount++;
+            text.value = '';
+            renderComments();
+          } catch (err) {
+            toast('댓글 등록에 실패했어요.');
+          } finally {
+            send.disabled = !text.value.trim();
+          }
+        });
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

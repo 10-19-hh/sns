@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>게시글 수정 · Moment</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="edit">
+  <main class="page narrow compose">
+    <h1>게시글 수정</h1>
+    <div class="field" id="imgwrap" hidden>
+      <label>사진</label>
+      <div class="upload" style="cursor:default"><img id="img" alt=""></div>
+      <div class="hint">사진 교체는 지원하지 않아요. 내용만 수정할 수 있어요.</div>
+    </div>
+    <div class="field">
+      <label for="cap">내용</label>
+      <textarea class="textarea" id="cap" maxlength="2200"></textarea>
+      <div class="hint counter"><span id="cnt">0</span> / 2,200</div>
+    </div>
+    <div class="error" id="e-form" role="alert"></div>
+    <div class="actions-row">
+      <a class="btn btn-secondary" id="cancel" href="index.html">취소</a>
+      <button class="btn btn-primary" id="save" disabled>저장</button>
+    </div>
+  </main>
+  <script src="js/common.js"></script>
+  <script type="module">
+    import { fetchPost, updatePostCaption, requireSession, initHeader, postImageUrl } from './js/supabase.js';
+    const { $, qs } = UI;
+    const id = qs('id');
+
+    (async () => {
+      const session = await requireSession();
+      if (!session) return;
+      initHeader();
+      try {
+        const p = await fetchPost(id);
+        if (p.author_id !== session.user.id) { UI.toast('수정 권한이 없어요.'); location.href = `post.html?id=${id}`; return; }
+        $('#cancel').href = `post.html?id=${id}`;
+        if (p.image_path) { $('#imgwrap').hidden = false; $('#img').src = postImageUrl(p.image_path); }
+        const cap = $('#cap');
+        cap.value = p.caption || '';
+        const hasImage = !!p.image_path;
+        const upd = () => { $('#cnt').textContent = cap.value.length.toLocaleString(); $('#save').disabled = !cap.value.trim() && !hasImage; };
+        cap.addEventListener('input', upd); upd();
+
+        $('#save').onclick = async () => {
+          const btn = $('#save'); btn.disabled = true; btn.textContent = '저장 중…';
+          try {
+            await updatePostCaption(id, cap.value.trim() || null);
+            UI.toast('수정되었어요');
+            location.href = `post.html?id=${id}`;
+          } catch (e) {
+            $('#e-form').textContent = '저장에 실패했어요. 다시 시도해주세요.';
+            btn.disabled = false; btn.textContent = '저장';
+          }
+        };
+      } catch (e) {
+        UI.toast('게시글을 찾을 수 없어요.');
+        location.href = 'index.html';
+      }
+    })();
+  </script>
+</body>
+</html>

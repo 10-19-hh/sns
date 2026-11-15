@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>프로필 · Moment</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="profile">
+  <main class="page wide" id="root"><div class="loader"><div class="spinner"></div>불러오는 중…</div></main>
+  <script src="js/common.js"></script>
+  <script type="module">
+    import { getSession, initHeader, getProfileByUsername, getMyProfile, fetchPostsByUsername, postImageUrl } from './js/supabase.js';
+    const { $, esc, qs, I } = UI;
+
+    (async () => {
+      const session = await getSession();
+      await initHeader();
+
+      let u;
+      const requested = qs('u');
+      try {
+        if (requested) {
+          u = await getProfileByUsername(requested);
+        } else {
+          u = await getMyProfile();
+          if (!u) { location.href = 'login.html'; return; }
+        }
+      } catch (e) {
+        $('#root').innerHTML = '<div class="empty"><h3>사용자를 찾을 수 없어요</h3></div>';
+        return;
+      }
+
+      const isMe = session?.user?.id === u.id;
+      document.title = `${u.display_name || u.username} (@${u.username}) · Moment`;
+
+      let posts = [];
+      try { posts = await fetchPostsByUsername(u.username); } catch (e) { posts = []; }
+      const likesTotal = posts.reduce((s, p) => s + p.like_count, 0);
+
+      $('#root').innerHTML = `
+        <section class="profile-head">
+          <img class="avatar lg" src="${esc(u.avatar_url || '')}" alt="${esc(u.display_name || u.username)} 프로필 사진">
+          <div class="profile-info">
+            <div class="profile-top">
+              <h1>${esc(u.username)}</h1>
+              ${isMe ? '<a class="btn btn-secondary btn-sm" href="settings.html">프로필 편집</a>' : ''}
+            </div>
+            <div class="stats">
+              <span>게시글 <b>${posts.length}</b></span>
+              <span>받은 좋아요 <b>${likesTotal.toLocaleString()}</b></span>
+            </div>
+            ${u.display_name ? `<div class="profile-name">${esc(u.display_name)}</div>` : ''}
+            ${u.bio ? `<div class="profile-bio">${esc(u.bio)}</div>` : ''}
+          </div>
+        </section>
+        <div class="tabs"><span>게시글</span></div>
+        ${posts.length ? `<div class="grid">${posts.map((p) => {
+          const src = postImageUrl(p.image_path);
+          return `<a href="post.html?id=${p.id}" aria-label="게시글 보기">
+            ${src ? `<img src="${esc(src)}" alt="${esc((p.caption || '').slice(0, 40))}" loading="lazy">` : `<div class="txt">${esc(p.caption || '')}</div>`}
+            <div class="ov"><span>${I.heartFill}${p.like_count}</span><span>${I.comment.replace('<svg', '<svg style="fill:none;stroke:#fff"')}${p.comment_count}</span></div></a>`;
+        }).join('')}</div>`
+        : `<div class="empty"><h3>아직 게시글이 없어요</h3>${isMe ? '<a class="link-btn" href="new.html">첫 게시글 올리기</a>' : ''}</div>`}`;
+    })();
+  </script>
+</body>
+</html>

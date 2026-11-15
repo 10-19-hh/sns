@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>로그인 · Moment</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-bare="1">
+  <main class="page narrow auth-card">
+    <div class="logo">Moment<span>.</span></div>
+    <p class="sub">친구들의 순간을 만나보세요</p>
+    <form id="form" novalidate>
+      <div class="field">
+        <label for="email">이메일</label>
+        <input class="input" id="email" type="email" autocomplete="email" placeholder="name@example.com" required>
+        <div class="error" id="e-email" role="alert"></div>
+      </div>
+      <div class="field">
+        <label for="pw">비밀번호</label>
+        <input class="input" id="pw" type="password" autocomplete="current-password" placeholder="8자 이상" required>
+        <div class="error" id="e-pw" role="alert"></div>
+      </div>
+      <div class="error" id="e-form" role="alert" style="text-align:center;margin-bottom:10px"></div>
+      <button class="btn btn-primary btn-block" type="submit" id="submit">로그인</button>
+      <p style="text-align:center;margin:14px 0 0"><a class="link-btn" href="#" style="font-size:14px">비밀번호를 잊으셨나요?</a></p>
+    </form>
+    <div class="auth-foot">계정이 없으신가요? <a class="link-btn" href="signup.html">가입하기</a></div>
+  </main>
+  <script type="module">
+    import { signIn, getSession } from './js/supabase.js';
+    const $ = (s) => document.querySelector(s);
+
+    (async () => { if (await getSession()) location.href = 'index.html'; })();
+
+    $('#form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      let ok = true;
+      const set = (id, inp, msg) => { $(id).textContent = msg; $(inp).classList.toggle('invalid', !!msg); if (msg) ok = false; };
+      set('#e-email', '#email', /^\S+@\S+\.\S+$/.test($('#email').value) ? '' : '올바른 이메일을 입력해주세요.');
+      set('#e-pw', '#pw', $('#pw').value.length >= 8 ? '' : '비밀번호는 8자 이상이어야 해요.');
+      $('#e-form').textContent = '';
+      if (!ok) return;
+
+      const btn = $('#submit');
+      btn.disabled = true; btn.textContent = '로그인 중…';
+      try {
+        await signIn({ email: $('#email').value.trim(), password: $('#pw').value });
+        location.href = 'index.html';
+      } catch (err) {
+        $('#e-form').textContent = err.message?.includes('Invalid login')
+          ? '이메일 또는 비밀번호가 올바르지 않아요.'
+          : '로그인 중 오류가 발생했어요. 다시 시도해주세요.';
+        btn.disabled = false; btn.textContent = '로그인';
+      }
+    });
+  </script>
+</body>
+</html>
